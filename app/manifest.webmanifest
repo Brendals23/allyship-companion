@@ -1,0 +1,17 @@
+{
+  "name": "Allyship Companion",
+  "short_name": "Allyship",
+  "description": "Pause with purpose\u2014reflect, grow, and act with intention.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0B2E4F",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "640x160",
+      "type": "image/svg+xml"
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #ffffff;
+  --fg: #0b0b0b;
+  --muted: #444;
+  --accent: #0B2E4F;
+}
+
+[data-contrast='high'] {
+  --bg: #000;
+  --fg: #fff;
+  --muted: #e5e5e5;
+  --accent: #fff;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-feature-settings: "cv10","cv11";
+}
+
+.container {
+  max-width: 860px;
+}
