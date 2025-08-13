@@ -4,30 +4,78 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---------- Color tokens ---------- */
+/* Normal mode (pastel) */
 :root {
-  --bg: #EAF4FF;    /* pastel blue */
-  --fg: #0b0b0b;
-  --muted: #444;
-  --accent: #0B2E4F;
+  --bg:       #EAF4FF;  /* page background (pastel blue) */
+  --fg:       #0b0b0b;  /* primary text */
+  --muted:    #444;     /* secondary text */
+  --accent:   #0B2E4F;  /* headings / strong text */
+
+  --card:     #ffffff;  /* card background (was .bg-white) */
+  --border:   #e5e7eb;  /* default border color */
+
+  --tealSoft: #25b3a7;  /* prompt accent (border/text) */
 }
 
+/* High contrast mode (toggled via <html data-contrast="high">) */
 [data-contrast='high'] {
-  --bg: #000;
-  --fg: #fff;
-  --muted: #e5e5e5;
-  --accent: #fff;
+  --bg:       #000000;
+  --fg:       #ffffff;
+  --muted:    #e6e6e6;
+  --accent:   #ffffff;
+
+  --card:     #111111;
+  --border:   #666666;
+
+  --tealSoft: #4dd;     /* brighter accent in high contrast */
 }
 
-html, body {
-  height: 100%;
-}
+/* ---------- Global layout ---------- */
+html, body { height: 100%; }
 
 body {
   background: var(--bg);
   color: var(--fg);
   font-feature-settings: "cv10","cv11";
+  transition: background-color .2s ease, color .2s ease;
 }
 
-.container {
-  max-width: 860px;
+.container { max-width: 860px; }
+
+/* ---------- Utility bridges so Tailwind classes adapt to tokens ---------- */
+
+/* Common “card” look used by Tailwind classes in your JSX */
+.bg-white { background-color: var(--card) !important; }
+.border   { border-color: var(--border) !important; }
+
+/* Secondary text used in your copy blocks */
+.text-gray-600, .text-gray-700 { color: var(--muted) !important; }
+
+/* Headings / strong text hue */
+.text-navyDeep { color: var(--accent) !important; }
+
+/* Prompt accent helpers you reference in JSX */
+.text-tealSoft   { color: var(--tealSoft) !important; }
+.border-tealSoft { border-color: var(--tealSoft) !important; }
+
+/* Inputs & selects – readable in both modes */
+input, select, textarea {
+  background: #fff;
+  color: var(--fg);
+  border-color: var(--border);
 }
+[data-contrast='high'] input,
+[data-contrast='high'] select,
+[data-contrast='high'] textarea {
+  background: #000;
+  color: #fff;
+  border-color: var(--border);
+}
+input::placeholder,
+textarea::placeholder { color: #9aa3af; }
+[data-contrast='high'] input::placeholder,
+[data-contrast='high'] textarea::placeholder { color: #bfbfbf; }
+
+/* Buttons – keep borders visible in high contrast */
+button { border-color: var(--border); }
