@@ -26,32 +26,31 @@ function addDays(dateISO, n) {
   return formatDateISO(d);
 }
 
-// ---------- page ----------
 export default function Home() {
   // display prefs (local only)
-  const [contrast, setContrast] = useState('normal');
-  const [fontSize, setFontSize] = useState(1);
+  const [contrast, setContrast] = useState('normal'); // 'normal' | 'high'
+  const [fontSize, setFontSize] = useState(1);        // 1 = 100%
   const [useLexend, setUseLexend] = useState(true);
 
   // core state
   const today = useMemo(() => formatDateISO(new Date()), []);
   const [date, setDate] = useState(today);
-  const [theme, setTheme] = useState('All');               // theme picker
-  const [cadence, setCadence] = useState('self');          // daily | 3x | weekly | self
-  const [cadenceStart, setCadenceStart] = useState(today); // when nudges start
+  const [theme, setTheme] = useState('All');
   const [prompt, setPrompt] = useState('');
   const [reflection, setReflection] = useState('');
   const [filename, setFilename] = useState('');
 
-  // sprint state
+  // cadence + sprint
+  const [cadence, setCadence] = useState('self');          // daily | 3x | weekly | self
+  const [cadenceStart, setCadenceStart] = useState(today); // nudges start date
   const [sprintActive, setSprintActive] = useState(false);
   const [sprintStart, setSprintStart] = useState(today);
   const SPRINT_DAYS = 14;
 
-  // local history to power sprint wrap-up (stored on device)
-  const [history, setHistory] = useState([]); // {date, theme, prompt, reflection, words}
+  // local history (for wrap-up PDF)
+  const [history, setHistory] = useState([]);
 
-  // load prefs + history on first mount
+  // load prefs + history
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('ac_prefs') || '{}');
@@ -76,18 +75,20 @@ export default function Home() {
   // persist prefs + apply display settings
   useEffect(() => {
     try {
-      localStorage.setItem('ac_prefs', JSON.stringify({
-        contrast, fontSize, useLexend, theme, cadence, cadenceStart
-      }));
+      localStorage.setItem(
+        'ac_prefs',
+        JSON.stringify({ contrast, fontSize, useLexend, theme, cadence, cadenceStart })
+      );
     } catch {}
+    // The line below powers High contrast via CSS (see globals.css section)
     document.documentElement.setAttribute('data-contrast', contrast === 'high' ? 'high' : 'normal');
-    document.documentElement.style.fontSize = (fontSize * 100) + '%';
+    document.documentElement.style.fontSize = `${fontSize * 100}%`;
     document.body.style.fontFamily = useLexend
       ? 'Lexend, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial'
       : 'system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
   }, [contrast, fontSize, useLexend, theme, cadence, cadenceStart]);
 
-  // pick a prompt from the selected theme pool (stable per date)
+  // pick prompt from theme pool (stable per date)
   useEffect(() => {
     const pool = THEME_MAP[theme] || PROMPTS;
     const seed = Array.from(date).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
@@ -95,22 +96,20 @@ export default function Home() {
     setPrompt(pool[idx]);
   }, [date, theme]);
 
-  // filename from date + theme
+  // filename
   useEffect(() => {
     const safeTheme = (theme || 'Reflection').replace(/\s+/g, '_');
     setFilename(`${date}_${safeTheme}_Reflection.pdf`);
   }, [date, theme]);
 
-  // PWA worker (safe to ignore if not present)
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
   }, []);
 
-  // save current day entry locally + download single-day PDF
+  // save entry + download single-day PDF
   async function handleDownload() {
-    // save to history (local only)
     const entry = {
       date,
       theme,
@@ -123,7 +122,6 @@ export default function Home() {
     setHistory(updated);
     try { localStorage.setItem('ac_history', JSON.stringify(updated)); } catch {}
 
-    // generate the PDF
     const doc = <ReflectionPDF date={date} prompt={prompt} reflection={reflection} theme={theme} />;
     const blob = await pdf(doc).toBlob();
     const url = URL.createObjectURL(blob);
@@ -147,7 +145,7 @@ export default function Home() {
   const sprintDay = sprintActive ? Math.min(SPRINT_DAYS, Math.max(1, daysBetween(sprintStart, date) + 1)) : null;
   const sprintOver = sprintActive && daysBetween(sprintStart, date) >= SPRINT_DAYS;
 
-  // ---------- calendar (.ics) helpers ----------
+  // -------- calendar (.ics) helpers --------
   function icsHeader() {
     return [
       'BEGIN:VCALENDAR',
@@ -167,7 +165,7 @@ export default function Home() {
     URL.revokeObjectURL(url);
   }
 
-  // cadence ICS (RRULE)
+  // cadence ICS
   function downloadCadenceICS() {
     const dt = fmtDate(cadenceStart);
     let rrule = '';
@@ -185,7 +183,7 @@ export default function Home() {
     downloadICS('allyship-cadence.ics', vev);
   }
 
-  // sprint ICS: 14 all-day events
+  // sprint ICS
   function downloadSprintICS() {
     const events = [];
     for (let i = 0; i < SPRINT_DAYS; i++) {
@@ -201,7 +199,7 @@ export default function Home() {
     downloadICS('allyship-sprint-14d.ics', events);
   }
 
-  // sprint wrap-up PDF (compiles entries saved during sprint window)
+  // sprint wrap-up PDF
   async function handleSprintWrapPDF() {
     const start = sprintStart;
     const end = addDays(start, SPRINT_DAYS - 1);
@@ -223,7 +221,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen">
-      {/* header (no logo/nav) */}
+      {/* Header placeholder (no logo) */}
       <header className="w-full border-b border-gray-200 bg-white/60 backdrop-blur sticky top-0 z-10">
         <div className="mx-auto container px-4 py-4">
           <span className="sr-only">Allyship Companion</span>
@@ -231,69 +229,15 @@ export default function Home() {
       </header>
 
       <section className="mx-auto container px-4 py-8">
-        {/* title + intro */}
+        {/* Title + intro */}
         <h1 className="text-4xl md:text-5xl font-extrabold text-navyDeep mb-2">Allyship Companion</h1>
         <p className="text-lg text-gray-700 mb-3">A gentle nudge to practice allyship in three minutes or less.</p>
         <p className="text-gray-700 mb-6 max-w-2xl">
-          Choose a cadence or join a 14-day sprint, pick a theme (or All), and get reflective prompts.
-          Everything stays on your device. Download calendar nudges and PDFs whenever you like.
+          Adjust your display, reflect on today’s prompt, then (optionally) set up reminders or a 14-day sprint.
+          Everything stays on your device.
         </p>
 
-        {/* setup: cadence + theme */}
-        <div className="mb-6 p-4 rounded-lg border bg-white shadow-sm">
-          <h2 className="font-semibold mb-3">Your setup</h2>
-          <div className="grid gap-4">
-            <div className="flex flex-wrap gap-4 items-center">
-              <span className="font-semibold">Cadence:</span>
-              <label className="flex items-center gap-2">
-                <input type="radio" name="cad" checked={cadence==='daily'} onChange={()=>setCadence('daily')} /> Daily
-              </label>
-              <label className="flex items-center gap-2">
-                <input type="radio" name="cad" checked={cadence==='3x'} onChange={()=>setCadence('3x')} /> 3× per week (Mon/Wed/Fri)
-              </label>
-              <label className="flex items-center gap-2">
-                <input type="radio" name="cad" checked={cadence==='weekly'} onChange={()=>setCadence('weekly')} /> Weekly (Mon)
-              </label>
-              <label className="flex items-center gap-2">
-                <input type="radio" name="cad" checked={cadence==='self'} onChange={()=>setCadence('self')} /> Only when I choose
-              </label>
-            </div>
-
-            <div className="flex flex-wrap gap-4 items-center">
-              <label className="flex items-center gap-2">Start date
-                <input
-                  type="date"
-                  className="ml-2 border rounded px-2 py-1"
-                  value={cadenceStart}
-                  onChange={e=>setCadenceStart(e.target.value)}
-                />
-              </label>
-              <button
-                onClick={downloadCadenceICS}
-                className="px-3 py-1 rounded-md border text-sm"
-                disabled={cadence==='self'}
-              >
-                Download {cadence==='daily' ? 'daily' : cadence==='3x' ? 'Mon/Wed/Fri' : cadence==='weekly' ? 'weekly' : ''} calendar (.ics)
-              </button>
-              <span className="text-xs text-gray-600">Import .ics into Outlook or Google Calendar.</span>
-            </div>
-
-            <div className="flex flex-wrap gap-4 items-center">
-              <label className="font-semibold">Theme:</label>
-              <select className="border rounded px-2 py-1" value={theme} onChange={e=>setTheme(e.target.value)}>
-                <option>All</option>
-                <option>Belonging</option>
-                <option>Bias</option>
-                <option>Visibility</option>
-                <option>Inclusion</option>
-                <option>Advocacy</option>
-              </select>
-              <span className="text-xs text-gray-600">You can change this anytime.</span>
-            </div>
-          </div>
-        </div>
-
-        {/* accessibility */}
+        {/* 1) Accessibility FIRST */}
         <div className="mb-6 p-4 rounded-lg border bg-white shadow-sm">
           <h2 className="font-semibold mb-2">Accessibility & display options</h2>
           <div className="flex flex-wrap gap-4 items-center text-sm">
@@ -313,34 +257,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* sprint controls */}
-        <div className="mb-6 p-4 rounded-lg border bg-white shadow-sm">
-          <h2 className="font-semibold mb-2">14-day sprint (one prompt per day)</h2>
-          {!sprintActive ? (
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="flex items-center gap-2">Start on
-                <input type="date" className="ml-2 border rounded px-2 py-1" value={sprintStart} onChange={e=>setSprintStart(e.target.value)} />
-              </label>
-              <button onClick={handleStartSprint} className="px-3 py-1 rounded-md border">Start sprint</button>
-              <button onClick={downloadSprintICS} className="px-3 py-1 rounded-md border">Download sprint calendar (.ics)</button>
-              <span className="text-xs text-gray-600">Import .ics into Outlook or Google Calendar.</span>
-            </div>
-          ) : (
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="inline-block rounded-md bg-white border px-3 py-1 shadow-sm">
-                Sprint active • Day {sprintOver ? SPRINT_DAYS : sprintDay} of {SPRINT_DAYS} (started {sprintStart})
-              </span>
-              <button onClick={sprintOver ? handleEndSprint : downloadSprintICS} className="px-3 py-1 rounded-md border">
-                {sprintOver ? 'End sprint' : 'Get calendar again'}
-              </button>
-              {sprintOver && (
-                <button onClick={handleSprintWrapPDF} className="px-3 py-1 rounded-md border">Download sprint wrap-up PDF</button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* prompt + form */}
+        {/* 2) Prompt & Reflection */}
         <div className="grid gap-6">
           <div className="p-4 rounded-lg border bg-white shadow-sm">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-3">
@@ -412,7 +329,59 @@ export default function Home() {
           </div>
         </div>
 
-        {/* privacy */}
+        {/* 3) Cadence & Sprint BELOW the reflection */}
+        <div className="mt-10 mb-6 p-4 rounded-lg border bg-white shadow-sm">
+          <h2 className="font-semibold mb-3">Optional nudges & sprint</h2>
+
+          {/* cadence */}
+          <div className="grid gap-4 mb-5">
+            <div className="flex flex-wrap gap-4 items-center">
+              <span className="font-semibold">Cadence:</span>
+              <label className="flex items-center gap-2"><input type="radio" name="cad" checked={cadence==='daily'} onChange={()=>setCadence('daily')} /> Daily</label>
+              <label className="flex items-center gap-2"><input type="radio" name="cad" checked={cadence==='3x'} onChange={()=>setCadence('3x')} /> 3× per week (Mon/Wed/Fri)</label>
+              <label className="flex items-center gap-2"><input type="radio" name="cad" checked={cadence==='weekly'} onChange={()=>setCadence('weekly')} /> Weekly (Mon)</label>
+              <label className="flex items-center gap-2"><input type="radio" name="cad" checked={cadence==='self'} onChange={()=>setCadence('self')} /> Only when I choose</label>
+            </div>
+            <div className="flex flex-wrap gap-4 items-center">
+              <label className="flex items-center gap-2">Start date
+                <input type="date" className="ml-2 border rounded px-2 py-1" value={cadenceStart} onChange={e=>setCadenceStart(e.target.value)} />
+              </label>
+              <button onClick={downloadCadenceICS} className="px-3 py-1 rounded-md border text-sm" disabled={cadence==='self'}>
+                Download {cadence==='daily' ? 'daily' : cadence==='3x' ? 'Mon/Wed/Fri' : cadence==='weekly' ? 'weekly' : ''} calendar (.ics)
+              </button>
+              <span className="text-xs text-gray-600">Import .ics into Outlook or Google Calendar.</span>
+            </div>
+          </div>
+
+          {/* sprint */}
+          <div>
+            <h3 className="font-semibold mb-2">14-day sprint (one prompt per day)</h3>
+            {!sprintActive ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-2">Start on
+                  <input type="date" className="ml-2 border rounded px-2 py-1" value={sprintStart} onChange={e=>setSprintStart(e.target.value)} />
+                </label>
+                <button onClick={handleStartSprint} className="px-3 py-1 rounded-md border">Start sprint</button>
+                <button onClick={downloadSprintICS} className="px-3 py-1 rounded-md border">Download sprint calendar (.ics)</button>
+                <span className="text-xs text-gray-600">Import .ics into Outlook or Google Calendar.</span>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="inline-block rounded-md bg-white border px-3 py-1 shadow-sm">
+                  Sprint active • Day {sprintOver ? SPRINT_DAYS : sprintDay} of {SPRINT_DAYS} (started {sprintStart})
+                </span>
+                <button onClick={sprintOver ? handleEndSprint : downloadSprintICS} className="px-3 py-1 rounded-md border">
+                  {sprintOver ? 'End sprint' : 'Get calendar again'}
+                </button>
+                {sprintOver && (
+                  <button onClick={handleSprintWrapPDF} className="px-3 py-1 rounded-md border">Download sprint wrap-up PDF</button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Privacy */}
         <div className="mt-12 p-4 border rounded-lg bg-white shadow-sm">
           <h2 className="text-lg font-semibold mb-2">Privacy</h2>
           <p>This app works in your browser. Your inputs are used only to generate a downloadable PDF and are not sent to any server.</p>
