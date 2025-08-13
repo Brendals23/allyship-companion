@@ -1,7 +1,8 @@
 'use client';
 import React from 'react';
-import { Page, Text, View, Document, StyleSheet } from '@react-pdf/renderer';
+import { Page, Text, View, Document, StyleSheet, Font } from '@react-pdf/renderer';
 
+// Use system fonts; users can replace with brand fonts by embedding later.
 const styles = StyleSheet.create({
   page: {
     padding: 40
