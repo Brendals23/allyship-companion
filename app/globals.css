@@ -5,7 +5,7 @@
 @tailwind utilities;
 
 :root {
-  --bg: #ffffff;
+  --bg: #EAF4FF;    /* pastel blue */
   --fg: #0b0b0b;
   --muted: #444;
   --accent: #0B2E4F;
