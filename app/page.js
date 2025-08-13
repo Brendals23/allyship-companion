@@ -1,7 +1,9 @@
+// app/page.js
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
 import '../app/globals.css';
+
 import { pdf } from '@react-pdf/renderer';
 import { PROMPT_PAIRS, THEMES } from '../lib/prompts';
 import { ReflectionPDF } from '../components/ReflectionPDF.jsx';
@@ -27,8 +29,8 @@ function daysBetween(a, b) {
 }
 function weekStartMonday(dateISO) {
   const d = new Date(dateISO + 'T00:00:00');
-  const dow = d.getDay();              // 0 Sun..6 Sat
-  const delta = (dow + 6) % 7;         // Mon=0
+  const dow = d.getDay(); // 0 Sun .. 6 Sat
+  const delta = (dow + 6) % 7; // Mon = 0
   d.setDate(d.getDate() - delta);
   return formatDateISO(d);
 }
@@ -46,38 +48,38 @@ function seededPick(arr, seedStr) {
 // map cadence → prompt category
 function categoryForCadence(cadence) {
   if (cadence === 'weekly') return 'week';
-  if (cadence === '3x')     return 'fewDays';
+  if (cadence === '3x') return 'fewDays';
   return 'daily'; // 'daily' and 'self'
 }
 
 /* ---------- page ---------- */
 export default function Home() {
-  /* display prefs */
+  // display prefs
   const [contrast, setContrast] = useState('normal');
   const [fontSize, setFontSize] = useState(1);
   const [useLexend, setUseLexend] = useState(true);
 
-  /* core state */
+  // core state
   const today = useMemo(() => formatDateISO(new Date()), []);
   const [date, setDate] = useState(today);
-  const [cadence, setCadence] = useState('self');  // daily | 3x | weekly | self
+  const [cadence, setCadence] = useState('self'); // daily | 3x | weekly | self
   const [theme, setTheme] = useState('All');
   const [reflection, setReflection] = useState('');
   const [filename, setFilename] = useState('');
 
-  /* sprint */
+  // sprint
   const [sprintActive, setSprintActive] = useState(false);
   const [sprintStart, setSprintStart] = useState(today);
   const SPRINT_DAYS = 14;
 
-  /* local history */
+  // history for summaries
   const [history, setHistory] = useState([]);
 
-  /* selected prompts */
+  // selected prompts
   const [promptReflection, setPromptReflection] = useState('');
   const [promptAction, setPromptAction] = useState('');
 
-  /* load prefs/history */
+  // load prefs/history
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('ac_prefs') || '{}');
@@ -95,11 +97,9 @@ export default function Home() {
     } catch {}
   }, [today]);
 
-  /* persist prefs + apply display */
+  // persist prefs + apply display
   useEffect(() => {
-    try {
-      localStorage.setItem('ac_prefs', JSON.stringify({ contrast, fontSize, useLexend, cadence, theme }));
-    } catch {}
+    try { localStorage.setItem('ac_prefs', JSON.stringify({ contrast, fontSize, useLexend, cadence, theme })); } catch {}
     document.documentElement.setAttribute('data-contrast', contrast === 'high' ? 'high' : 'normal');
     document.documentElement.style.fontSize = `${fontSize * 100}%`;
     document.body.style.fontFamily = useLexend
@@ -107,15 +107,13 @@ export default function Home() {
       : 'system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
   }, [contrast, fontSize, useLexend, cadence, theme]);
 
-  /* choose prompt pair based on date + cadence + theme (with filtering) */
+  // choose prompt pair based on date + cadence + theme (with filtering)
   useEffect(() => {
     const cat   = categoryForCadence(cadence);
     const pool  = PROMPT_PAIRS[cat] || PROMPT_PAIRS.daily;
-
-    // filter by theme if present
     const t     = theme || 'All';
     const filt  = (t === 'All') ? pool : pool.filter(p => (p.themes || []).includes(t));
-    const final = filt.length ? filt : pool; // safe fallback
+    const final = filt.length ? filt : pool;
 
     const seed  = `${date}|${cadence}|${t}`;
     const pick  = seededPick(final, seed);
@@ -124,14 +122,14 @@ export default function Home() {
     setPromptAction(pick?.action || '');
   }, [date, cadence, theme]);
 
-  /* filename */
+  // filename (used by single-day download)
   useEffect(() => {
     const safeCat   = categoryForCadence(cadence);
     const safeTheme = (theme || 'All').replace(/\s+/g, '_');
     setFilename(`${date}_${safeCat}_${safeTheme}_Reflection.pdf`);
   }, [date, cadence, theme]);
 
-  /* service worker (optional) */
+  // service worker (optional)
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
@@ -154,7 +152,7 @@ export default function Home() {
     setHistory(updated);
     try { localStorage.setItem('ac_history', JSON.stringify(updated)); } catch {}
 
-    const doc  = <ReflectionPDF date={date} prompt={promptReflection} reflection={reflection} theme={theme} />;
+    const doc = <ReflectionPDF date={date} prompt={promptReflection} reflection={reflection} theme={theme} />;
     const blob = await pdf(doc).toBlob();
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
@@ -163,15 +161,27 @@ export default function Home() {
   }
 
   async function downloadSummaryPDF() {
-    const start = sprintActive ? sprintStart : weekStartMonday(date);
-    const fullEnd = sprintActive ? addDays(sprintStart, SPRINT_DAYS - 1) : weekEndFromStart(weekStartMonday(date));
-    const end = sprintActive && new Date(fullEnd) > new Date(today) ? today : fullEnd;
+    const weekStart = weekStartMonday(date);
+    const weekEnd   = weekEndFromStart(weekStart);
 
     const entries = history
-      .filter(h => h.date >= start && h.date <= end)
+      .filter(h => h.date >= weekStart && h.date <= weekEnd)
       .sort((a, b) => (a.date < b.date ? -1 : 1));
 
-    const doc  = <SprintWrapPDF start={start} end={end} entries={entries} theme={theme} />;
+    // If sprint is active, prefer sprint range (but don’t include future dates)
+    let start = weekStart, end = weekEnd, label = '(this week)';
+    if (sprintActive) {
+      start = sprintStart;
+      const fullEnd = addDays(sprintStart, SPRINT_DAYS - 1);
+      end = new Date(fullEnd) > new Date(today) ? today : fullEnd;
+      label = '(sprint)';
+    }
+
+    const sprintEntries = sprintActive
+      ? history.filter(h => h.date >= start && h.date <= end).sort((a, b) => (a.date < b.date ? -1 : 1))
+      : entries;
+
+    const doc  = <SprintWrapPDF start={start} end={end} entries={sprintEntries} theme={theme} />;
     const blob = await pdf(doc).toBlob();
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
@@ -181,28 +191,33 @@ export default function Home() {
     URL.revokeObjectURL(url);
   }
 
-  /* .ics helpers (nudges) */
+  // .ics helpers (unchanged)
   function icsHeader() { return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Allyship Companion//EN','CALSCALE:GREGORIAN'].join('\r\n'); }
   function icsFooter() { return 'END:VCALENDAR'; }
   function fmtDate(dISO) { return dISO.replace(/-/g, ''); }
-
+  function downloadICS(filename, vevents) {
+    const content = [icsHeader(), ...vevents, icsFooter()].join('\r\n');
+    const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  }
+  function downloadCadenceICS(startISO) {
+    const dt = fmtDate(startISO);
+    let rrule = '';
+    if (cadence === 'daily') rrule = 'RRULE:FREQ=DAILY';
+    if (cadence === 'weekly') rrule = 'RRULE:FREQ=WEEKLY;BYDAY=MO';
+    if (cadence === '3x')    rrule = 'RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR';
+    const vev = ['BEGIN:VEVENT', `UID:ac-${dt}-${cadence}@allyship`, `DTSTART;VALUE=DATE:${dt}`, `SUMMARY:Allyship reflection (${cadence})`, rrule, 'END:VEVENT'];
+    downloadICS('allyship-cadence.ics', vev);
+  }
   function downloadSprintICS() {
     const events = [];
     for (let i = 0; i < SPRINT_DAYS; i++) {
       const d = fmtDate(addDays(sprintStart, i));
-      events.push(
-        'BEGIN:VEVENT',
-        `UID:sprint-${d}-${i}@allyship`,
-        `DTSTART;VALUE=DATE:${d}`,
-        `SUMMARY:Allyship 14-day sprint — Day ${i+1}`,
-        'END:VEVENT'
-      );
+      events.push('BEGIN:VEVENT', `UID:sprint-${d}-${i}@allyship`, `DTSTART;VALUE=DATE:${d}`, `SUMMARY:Allyship 14-day sprint — Day ${i+1}`, 'END:VEVENT');
     }
-    const content = [icsHeader(), ...events, icsFooter()].join('\r\n');
-    const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'allyship-sprint-14d.ics'; a.click();
-    URL.revokeObjectURL(url);
+    downloadICS('allyship-sprint-14d.ics', events);
   }
 
   /* ---------- derived UI state ---------- */
@@ -219,17 +234,21 @@ export default function Home() {
 
   const disableSummary = sprintActive ? !sprintHasEntries : !weekHasEntries;
 
-  /* ---------- render (order requested) ---------- */
+  /* ---------- render ---------- */
   return (
     <main className="min-h-screen">
-      <header className="w-full border-b border-gray-200 bg-white/60 backdrop-blur sticky top-0 z-10">
-        <div className="mx-auto container px-4 py-4">
-          <span className="sr-only">Allyship Companion</span>
-        </div>
-      </header>
+      {/* Title + intro (restored) */}
+      <section className="mx-auto container px-4 pt-10 pb-6">
+        <h1 className="text-4xl md:text-5xl font-extrabold text-navyDeep mb-2">Allyship Companion</h1>
+        <p className="text-lg text-gray-700 mb-3">A gentle nudge to practice allyship in three minutes or less.</p>
+        <p className="text-gray-700 max-w-2xl">
+          Adjust your display, reflect on today’s prompt, then (optionally) start a 14-day sprint and download PDFs when you like.
+          Everything stays on your device.
+        </p>
+      </section>
 
-      <section className="mx-auto container px-4 py-8">
-        {/* 1) Accessibility & display options */}
+      <section className="mx-auto container px-4 pb-10">
+        {/* 1) Accessibility */}
         <div className="mb-6 p-4 rounded-lg border bg-white shadow-sm">
           <h2 className="font-semibold mb-2">Accessibility & display options</h2>
           <div className="flex flex-wrap gap-4 items-center text-sm">
@@ -249,89 +268,71 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 2) Prompt area: Date at top, Prompt card, then Theme & Cadence below */}
-        <div className="grid gap-6">
-          <div className="p-4 rounded-lg border bg-white shadow-sm">
-            {/* Date at the top */}
-            <label className="flex items-center gap-2 font-semibold mb-3">
-              Date
-              <input
-                type="date"
-                className="ml-3 border rounded px-2 py-1"
-                value={date}
-                onChange={(e)=>setDate(e.target.value)}
-              />
-            </label>
+        {/* 2) Prompt (date on top; theme & cadence below the card) */}
+        <div className="p-4 rounded-lg border bg-white shadow-sm mb-6">
+          <label className="flex items-center gap-2 font-semibold mb-3">
+            Date
+            <input type="date" className="ml-3 border rounded px-2 py-1" value={date} onChange={(e)=>setDate(e.target.value)} />
+          </label>
 
-            {/* Prompt card */}
-            <div className="rounded-md border border-tealSoft p-5 mb-4">
-              <div className="text-xs uppercase tracking-wide text-tealSoft font-semibold mb-2 text-center">
-                Prompt ({categoryForCadence(cadence)}) • {theme}
-              </div>
-              <div className="text-xl italic text-center mb-3">{promptReflection}</div>
-              <div className="text-sm text-gray-700 text-center">
-                <span className="font-semibold">Action suggestion: </span>{promptAction}
-              </div>
+          <div className="rounded-md border border-tealSoft p-5 mb-4">
+            <div className="text-xs uppercase tracking-wide text-tealSoft font-semibold mb-2 text-center">
+              Prompt ({categoryForCadence(cadence)}) • {theme}
             </div>
-
-            {/* Theme & Cadence under the prompt */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <label className="flex items-center gap-2 font-semibold">
-                Theme
-                <select className="ml-3 border rounded px-2 py-1" value={theme} onChange={(e)=>setTheme(e.target.value)}>
-                  {THEMES.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </label>
-              <label className="flex items-center gap-2 font-semibold">
-                Cadence
-                <select className="ml-3 border rounded px-2 py-1" value={cadence} onChange={(e)=>setCadence(e.target.value)}>
-                  <option value="daily">Daily</option>
-                  <option value="3x">3× per week</option>
-                  <option value="weekly">Weekly</option>
-                  <option value="self">Only when I choose</option>
-                </select>
-              </label>
+            <div className="text-xl italic text-center mb-3">{promptReflection}</div>
+            <div className="text-sm text-gray-700 text-center">
+              <span className="font-semibold">Action suggestion: </span>{promptAction}
             </div>
           </div>
 
-          {/* Reflection box */}
-          <div className="p-4 rounded-lg border bg-white shadow-sm">
-            <label className="block font-semibold mb-2">
-              Reflection <span className="text-gray-500 text-sm">(max 500 words)</span>
+          <div className="flex flex-col md:flex-row gap-3">
+            <label className="flex items-center gap-2 font-semibold">
+              Theme
+              <select className="ml-3 border rounded px-2 py-1" value={theme} onChange={(e)=>setTheme(e.target.value)}>
+                {THEMES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
             </label>
-            <textarea
-              className="w-full min-h-[160px] border rounded-md p-3 outline-none focus:ring-2 focus:ring-tealSoft"
-              value={reflection}
-              onChange={(e)=>setReflection(e.target.value)}
-              placeholder="Type your reflection to the prompt above…"
-            />
-            <div className="mt-2 text-sm text-gray-600 flex items-center justify-between">
-              <span>{words} / 500 words</span>
-              <span className={words > 500 ? 'text-red-600' : ''}>
-                {words > 500 ? 'Please shorten to 500 words.' : ''}
-              </span>
-            </div>
+            <label className="flex items-center gap-2 font-semibold">
+              Cadence
+              <select className="ml-3 border rounded px-2 py-1" value={cadence} onChange={(e)=>setCadence(e.target.value)}>
+                <option value="daily">Daily</option>
+                <option value="3x">3× per week</option>
+                <option value="weekly">Weekly</option>
+                <option value="self">Only when I choose</option>
+              </select>
+            </label>
           </div>
         </div>
 
-        {/* 3) Start a 14-day Sprint Challenge */}
-        <div className="mt-10 mb-6 p-4 rounded-lg border bg-white shadow-sm">
+        {/* Reflection box */}
+        <div className="p-4 rounded-lg border bg-white shadow-sm mb-10">
+          <label className="block font-semibold mb-2">
+            Reflection <span className="text-gray-500 text-sm">(max 500 words)</span>
+          </label>
+          <textarea
+            className="w-full min-h-[160px] border rounded-md p-3 outline-none focus:ring-2 focus:ring-tealSoft"
+            value={reflection}
+            onChange={(e)=>setReflection(e.target.value)}
+            placeholder="Type your reflection to the prompt above…"
+          />
+          <div className="mt-2 text-sm text-gray-600 flex items-center justify-between">
+            <span>{words} / 500 words</span>
+            <span className={words > 500 ? 'text-red-600' : ''}>
+              {words > 500 ? 'Please shorten to 500 words.' : ''}
+            </span>
+          </div>
+        </div>
+
+        {/* 3) Sprint controls (renamed) */}
+        <div className="mt-2 mb-10 p-4 rounded-lg border bg-white shadow-sm">
           <h2 className="font-semibold mb-3">Start a 14-day Sprint Challenge</h2>
           {!sprintActive ? (
             <div className="flex flex-wrap items-center gap-3">
               <label className="flex items-center gap-2">Start on
-                <input
-                  type="date"
-                  className="ml-2 border rounded px-2 py-1"
-                  value={sprintStart}
-                  onChange={(e)=>setSprintStart(e.target.value)}
-                />
+                <input type="date" className="ml-2 border rounded px-2 py-1" value={sprintStart} onChange={(e)=>setSprintStart(e.target.value)} />
               </label>
               <button
-                onClick={() => {
-                  setSprintActive(true);
-                  try { localStorage.setItem('ac_sprint', JSON.stringify({active:true, startDate:sprintStart, days:SPRINT_DAYS})); } catch {}
-                }}
+                onClick={() => { setSprintActive(true); try { localStorage.setItem('ac_sprint', JSON.stringify({active:true, startDate:sprintStart, days:SPRINT_DAYS})); } catch {} }}
                 className="px-3 py-1 rounded-md border"
               >
                 Start sprint
@@ -358,8 +359,8 @@ export default function Home() {
           )}
         </div>
 
-        {/* 4) Download your reflections */}
-        <div className="mt-6 p-4 rounded-lg border bg-white shadow-sm">
+        {/* 4) Downloads */}
+        <div className="mt-2 p-4 rounded-lg border bg-white shadow-sm">
           <h2 className="font-semibold mb-2">Download your reflections</h2>
           <p className="text-gray-700 mb-3 text-sm">
             “Today” downloads what you wrote above. “Summary” bundles weekly (Mon–Sun) entries or your 14-day sprint if active.
@@ -386,7 +387,7 @@ export default function Home() {
         </div>
 
         {/* Privacy */}
-        <div className="mt-12 p-4 border rounded-lg bg-white shadow-sm">
+        <div className="mt-10 p-4 border rounded-lg bg-white shadow-sm">
           <h2 className="text-lg font-semibold mb-2">Privacy</h2>
           <p>This app works in your browser. Your inputs are used only to generate a downloadable PDF and are not sent to any server.</p>
         </div>
