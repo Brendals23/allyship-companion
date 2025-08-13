@@ -7,7 +7,7 @@ import { pdf } from '@react-pdf/renderer';
 import { ReflectionPDF } from '../components/ReflectionPDF.jsx';
 import { SprintWrapPDF } from '../components/SprintWrapPDF.jsx';
 
-/* ---------- helpers ---------- */
+/* ---------------- helpers ---------------- */
 function formatDateISO(date) {
   const d = new Date(date);
   const yyyy = d.getFullYear();
@@ -15,29 +15,29 @@ function formatDateISO(date) {
   const dd = String(d.getDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
 }
-function daysBetween(a, b) {
-  const d1 = new Date(a + 'T00:00:00');
-  const d2 = new Date(b + 'T00:00:00');
-  return Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
-}
 function addDays(dateISO, n) {
   const d = new Date(dateISO + 'T00:00:00');
   d.setDate(d.getDate() + n);
   return formatDateISO(d);
 }
-// Monday as the first day of the week
+function daysBetween(a, b) {
+  const d1 = new Date(a + 'T00:00:00');
+  const d2 = new Date(b + 'T00:00:00');
+  return Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
+}
+// Week helpers (Mon..Sun)
 function weekStartMonday(dateISO) {
   const d = new Date(dateISO + 'T00:00:00');
-  const dow = d.getDay();            // 0=Sun..6=Sat
-  const delta = (dow + 6) % 7;       // Mon=0, Tue=1, ... Sun=6
+  const dow = d.getDay();              // 0 Sun .. 6 Sat
+  const delta = (dow + 6) % 7;         // Mon = 0
   d.setDate(d.getDate() - delta);
   return formatDateISO(d);
 }
-function weekEndFromStart(weekStartISO) {
-  return addDays(weekStartISO, 6);   // Mon..Sun
+function weekEndFromStart(startISO) {
+  return addDays(startISO, 6);
 }
 
-/* ---------- page ---------- */
+/* ---------------- page ---------------- */
 export default function Home() {
   // display prefs
   const [contrast, setContrast] = useState('normal'); // 'normal' | 'high'
@@ -52,14 +52,14 @@ export default function Home() {
   const [reflection, setReflection] = useState('');
   const [filename, setFilename] = useState('');
 
-  // cadence + sprint
-  const [cadence, setCadence] = useState('self');          // daily | 3x | weekly | self
+  // cadence + sprint (nudges only; still no login/no server)
+  const [cadence, setCadence] = useState('self');     // daily | 3x | weekly | self
   const [cadenceStart, setCadenceStart] = useState(today);
   const [sprintActive, setSprintActive] = useState(false);
   const [sprintStart, setSprintStart] = useState(today);
   const SPRINT_DAYS = 14;
 
-  // local history for bundles (stays on device)
+  // on-device history for summaries
   const [history, setHistory] = useState([]);
 
   // load prefs/history
@@ -98,7 +98,7 @@ export default function Home() {
       : 'system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
   }, [contrast, fontSize, useLexend, theme, cadence, cadenceStart]);
 
-  // pick prompt from theme pool
+  // pick prompt from theme pool (stable per date)
   useEffect(() => {
     const pool = THEME_MAP[theme] || PROMPTS;
     const seed = Array.from(date).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
@@ -112,17 +112,17 @@ export default function Home() {
     setFilename(`${date}_${safeTheme}_Reflection.pdf`);
   }, [date, theme]);
 
-  // sw (safe to ignore if not present)
+  // optional SW
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
   }, []);
 
-  /* ---------- downloads ---------- */
+  /* -------------- downloads -------------- */
 
-  // Save today's entry locally (so weekly/sprint bundles can include it later) + download single-day PDF
-  async function handleDownloadToday() {
+  // Save today → history (local) + download single-day PDF
+  async function downloadTodayPDF() {
     const entry = {
       date, theme, prompt, reflection,
       words: reflection.trim().split(/\s+/).filter(Boolean).length
@@ -136,16 +136,21 @@ export default function Home() {
     const blob = await pdf(doc).toBlob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = filename || 'reflection.pdf';
-    a.click();
+    a.href = url; a.download = filename || 'reflection.pdf'; a.click();
     URL.revokeObjectURL(url);
   }
 
-  // Weekly bundle: Monday..Sunday of the week that contains "date"
-  async function handleDownloadWeek() {
-    const start = weekStartMonday(date);
-    const end = weekEndFromStart(start);
+  // Summary: if sprint active → sprint window (to-date if mid-sprint), else Mon..Sun of current week
+  async function downloadSummaryPDF() {
+    let start = weekStartMonday(date);
+    let end   = weekEndFromStart(start);
+
+    if (sprintActive) {
+      start = sprintStart;
+      const fullEnd = addDays(sprintStart, SPRINT_DAYS - 1);
+      end = (new Date(today) < new Date(fullEnd)) ? today : fullEnd;
+    }
+
     const entries = history
       .filter(h => h.date >= start && h.date <= end)
       .sort((a, b) => (a.date < b.date ? -1 : 1));
@@ -155,97 +160,55 @@ export default function Home() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Allyship_Weekly_${start}_to_${end}.pdf`;
+    a.download = sprintActive
+      ? `Allyship_Sprint_${start}_to_${end}.pdf`
+      : `Allyship_Weekly_${start}_to_${end}.pdf`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  // Sprint bundle (to-date or full 14 days)
-  async function handleSprintWrapPDF() {
-    const start = sprintStart;
-    const endFull = addDays(start, SPRINT_DAYS - 1);
-    const end = (new Date(today) < new Date(endFull)) ? today : endFull; // to-date if mid-sprint
-    const entries = history
-      .filter(h => h.date >= start && h.date <= end)
-      .sort((a, b) => (a.date < b.date ? -1 : 1));
-
-    const doc = <SprintWrapPDF start={start} end={end} entries={entries} theme={theme} />;
-    const blob = await pdf(doc).toBlob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Allyship_Sprint_${start}_to_${end}.pdf`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  // Button enable/disable
-  const wordCount = reflection.trim().split(/\s+/).filter(Boolean).length;
-  const disableToday = reflection.trim().length === 0 || wordCount > 500;
-
-  const weekStart = weekStartMonday(date);
-  const weekEnd = weekEndFromStart(weekStart);
-  const weekHasEntries = history.some(h => h.date >= weekStart && h.date <= weekEnd);
-
-  const sprintDay = sprintActive ? Math.min(SPRINT_DAYS, Math.max(1, daysBetween(sprintStart, date) + 1)) : null;
-  const sprintEndFull = addDays(sprintStart, SPRINT_DAYS - 1);
-  const sprintHasEntries = sprintActive && history.some(h => h.date >= sprintStart && h.date <= (new Date(today) < new Date(sprintEndFull) ? today : sprintEndFull));
-
-  /* ---------- calendar (.ics) helpers ---------- */
-  function icsHeader() {
-    return [
-      'BEGIN:VCALENDAR',
-      'VERSION:2.0',
-      'PRODID:-//Allyship Companion//EN',
-      'CALSCALE:GREGORIAN',
-    ].join('\r\n');
-  }
+  // cadence / sprint calendars (.ics)
+  function icsHeader() { return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Allyship Companion//EN','CALSCALE:GREGORIAN'].join('\r\n'); }
   function icsFooter() { return 'END:VCALENDAR'; }
   function fmtDate(dISO) { return dISO.replace(/-/g, ''); }
   function downloadICS(filename, vevents) {
     const content = [icsHeader(), ...vevents, icsFooter()].join('\r\n');
-    const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
+    const blob = new Blob([content], { type:'text/calendar;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = filename; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
     URL.revokeObjectURL(url);
   }
-
-  // cadence ICS
   function downloadCadenceICS() {
     const dt = fmtDate(cadenceStart);
     let rrule = '';
-    if (cadence === 'daily') rrule = 'RRULE:FREQ=DAILY';
-    if (cadence === 'weekly') rrule = 'RRULE:FREQ=WEEKLY;BYDAY=MO';
-    if (cadence === '3x')    rrule = 'RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR';
-    const vev = [
-      'BEGIN:VEVENT',
-      `UID:ac-${dt}-${cadence}@allyship`,
-      `DTSTART;VALUE=DATE:${dt}`,
-      `SUMMARY:Allyship reflection (${cadence})`,
-      rrule,
-      'END:VEVENT'
-    ];
+    if (cadence === 'daily')   rrule = 'RRULE:FREQ=DAILY';
+    if (cadence === 'weekly')  rrule = 'RRULE:FREQ=WEEKLY;BYDAY=MO';
+    if (cadence === '3x')      rrule = 'RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR';
+    const vev = ['BEGIN:VEVENT', `UID:ac-${dt}-${cadence}@allyship`, `DTSTART;VALUE=DATE:${dt}`, `SUMMARY:Allyship reflection (${cadence})`, rrule, 'END:VEVENT'];
     downloadICS('allyship-cadence.ics', vev);
   }
-
-  // sprint ICS (14 all-day events)
   function downloadSprintICS() {
     const events = [];
     for (let i = 0; i < SPRINT_DAYS; i++) {
       const d = fmtDate(addDays(sprintStart, i));
-      events.push(
-        'BEGIN:VEVENT',
-        `UID:sprint-${d}-${i}@allyship`,
-        `DTSTART;VALUE=DATE:${d}`,
-        `SUMMARY:Allyship 14-day sprint — Day ${i + 1}`,
-        'END:VEVENT'
-      );
+      events.push('BEGIN:VEVENT', `UID:sprint-${d}-${i}@allyship`, `DTSTART;VALUE=DATE:${d}`, `SUMMARY:Allyship 14-day sprint — Day ${i+1}`, 'END:VEVENT');
     }
     downloadICS('allyship-sprint-14d.ics', events);
   }
 
-  /* ---------- UI ---------- */
+  /* -------------- UI state -------------- */
+  const wordCount = reflection.trim().split(/\s+/).filter(Boolean).length;
+  const disableToday = reflection.trim().length === 0 || wordCount > 500;
+
+  const weekStart = weekStartMonday(date);
+  const weekEnd   = weekEndFromStart(weekStart);
+  const weekHasEntries = history.some(h => h.date >= weekStart && h.date <= weekEnd);
+  const sprintEndFull  = addDays(sprintStart, SPRINT_DAYS - 1);
+  const sprintHasEntries = sprintActive &&
+    history.some(h => h.date >= sprintStart && h.date <= (new Date(today) < new Date(sprintEndFull) ? today : sprintEndFull));
+  const disableSummary = sprintActive ? !sprintHasEntries : !weekHasEntries;
+
+  /* ---------------- render ---------------- */
   return (
     <main className="min-h-screen">
       <header className="w-full border-b border-gray-200 bg-white/60 backdrop-blur sticky top-0 z-10">
@@ -255,7 +218,7 @@ export default function Home() {
       </header>
 
       <section className="mx-auto container px-4 py-8">
-        {/* Title + intro */}
+        {/* Title & intro */}
         <h1 className="text-4xl md:text-5xl font-extrabold text-navyDeep mb-2">Allyship Companion</h1>
         <p className="text-lg text-gray-700 mb-3">A gentle nudge to practice allyship in three minutes or less.</p>
         <p className="text-gray-700 mb-6 max-w-2xl">
@@ -263,41 +226,37 @@ export default function Home() {
           Everything stays on your device.
         </p>
 
-        {/* 1) Accessibility FIRST */}
+        {/* Accessibility first */}
         <div className="mb-6 p-4 rounded-lg border bg-white shadow-sm">
           <h2 className="font-semibold mb-2">Accessibility & display options</h2>
           <div className="flex flex-wrap gap-4 items-center text-sm">
             <label className="flex items-center gap-2">
-              <input type="checkbox" checked={useLexend} onChange={(e) => setUseLexend(e.target.checked)} />
+              <input type="checkbox" checked={useLexend} onChange={e=>setUseLexend(e.target.checked)} />
               Dyslexia-friendly font (Lexend)
             </label>
             <label className="flex items-center gap-2">
               Text size
-              <input type="range" min="0.9" max="1.4" step="0.05" value={fontSize}
-                     onChange={(e) => setFontSize(parseFloat(e.target.value))} />
-              <span>{Math.round(fontSize * 100)}%</span>
+              <input type="range" min="0.9" max="1.4" step="0.05" value={fontSize} onChange={e=>setFontSize(parseFloat(e.target.value))} />
+              <span>{Math.round(fontSize*100)}%</span>
             </label>
             <label className="flex items-center gap-2">
-              <input type="checkbox" checked={contrast === 'high'}
-                     onChange={(e) => setContrast(e.target.checked ? 'high' : 'normal')} />
+              <input type="checkbox" checked={contrast==='high'} onChange={e=>setContrast(e.target.checked?'high':'normal')} />
               High contrast
             </label>
           </div>
         </div>
 
-        {/* 2) Prompt & Reflection */}
+        {/* Prompt & Reflection */}
         <div className="grid gap-6">
           <div className="p-4 rounded-lg border bg-white shadow-sm">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-3">
               <label className="flex items-center gap-2 font-semibold">
                 Date
-                <input type="date" className="ml-3 border rounded px-2 py-1"
-                       value={date} onChange={(e) => setDate(e.target.value)} />
+                <input type="date" className="ml-3 border rounded px-2 py-1" value={date} onChange={e=>setDate(e.target.value)} />
               </label>
               <label className="flex items-center gap-2 font-semibold">
                 Theme
-                <select className="ml-3 border rounded px-2 py-1"
-                        value={theme} onChange={(e) => setTheme(e.target.value)}>
+                <select className="ml-3 border rounded px-2 py-1" value={theme} onChange={e=>setTheme(e.target.value)}>
                   <option>All</option>
                   <option>Belonging</option>
                   <option>Bias</option>
@@ -308,7 +267,6 @@ export default function Home() {
               </label>
             </div>
 
-            {/* prompt card */}
             <div className="prompt-box rounded-md border border-tealSoft p-5">
               <div className="text-xs uppercase tracking-wide text-tealSoft font-semibold mb-2 text-center">Prompt</div>
               <div className="text-xl italic text-center">{prompt}</div>
@@ -322,113 +280,96 @@ export default function Home() {
             <textarea
               className="w-full min-h-[160px] border rounded-md p-3 outline-none focus:ring-2 focus:ring-tealSoft"
               value={reflection}
-              onChange={(e) => setReflection(e.target.value)}
+              onChange={e=>setReflection(e.target.value)}
               placeholder="Type your reflection to the prompt above…"
             />
             <div className="mt-2 text-sm text-gray-600 flex items-center justify-between">
-              <span>{reflection.trim().split(/\s+/).filter(Boolean).length} / 500 words</span>
-              <span className={reflection.trim().split(/\s+/).filter(Boolean).length > 500 ? 'text-red-600' : ''}>
-                {reflection.trim().split(/\s+/).filter(Boolean).length > 500 ? 'Please shorten to 500 words.' : ''}
+              <span>{wordCount} / 500 words</span>
+              <span className={wordCount > 500 ? 'text-red-600' : ''}>
+                {wordCount > 500 ? 'Please shorten to 500 words.' : ''}
               </span>
             </div>
           </div>
         </div>
 
-        {/* 3) Downloads (clear purposes) */}
+        {/* Downloads panel */}
         <div className="mt-6 p-4 rounded-lg border bg-white shadow-sm">
-          <h2 className="font-semibold mb-2">Downloads</h2>
+          <h2 className="font-semibold mb-2">Download your reflections</h2>
           <p className="text-gray-700 mb-3 text-sm">
-            Save your reflections as PDFs. “Today” saves the text above and downloads a single page.
-            “This week” bundles entries you’ve saved this week. If you’re in a 14-day sprint, you can also
-            download a sprint PDF at any time.
+            Save your progress as PDFs. “Today” downloads what you’ve written above.
+            “Summary” bundles entries you’ve saved — weekly (Mon–Sun) or your 14-day sprint if active.
           </p>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
             <button
-              onClick={handleDownloadToday}
+              onClick={downloadTodayPDF}
               disabled={disableToday}
               className={`px-4 py-2 rounded-md text-white ${disableToday ? 'bg-gray-400' : 'bg-navyDeep hover:opacity-90'}`}
-              aria-disabled={disableToday}
-              title="Downloads a PDF of today's reflection"
+              title="Downloads a PDF of today’s reflection"
             >
               Download today’s reflection (PDF)
             </button>
 
             <button
-              onClick={handleDownloadWeek}
-              disabled={!weekHasEntries}
-              className={`px-4 py-2 rounded-md border ${!weekHasEntries ? 'opacity-50' : 'hover:bg-gray-50'}`}
-              title="Bundles entries you saved this week (Mon–Sun)"
+              onClick={downloadSummaryPDF}
+              disabled={disableSummary}
+              className={`px-4 py-2 rounded-md border ${disableSummary ? 'opacity-50' : 'hover:bg-gray-50'}`}
+              title={sprintActive
+                ? 'Bundles entries from your sprint window'
+                : 'Bundles entries saved this week (Mon–Sun)'}
             >
-              Download this week’s reflections
-            </button>
-
-            <button
-              onClick={handleSprintWrapPDF}
-              disabled={!sprintHasEntries}
-              className={`px-4 py-2 rounded-md border ${!sprintHasEntries ? 'opacity-50' : 'hover:bg-gray-50'}`}
-              title="If a sprint is active, download all entries from the sprint window"
-            >
-              Download sprint PDF
+              Download summary {sprintActive ? '(sprint)' : '(this week)'}
             </button>
           </div>
-          <p className="text-xs text-gray-600 mt-2">
-            Tip: use “Today” after you write. Weekly/sprint PDFs include entries you’ve already saved on this device.
-          </p>
+          <p className="text-xs text-gray-600 mt-2">Tip: press “Today” after you write; summaries include entries already saved on this device.</p>
         </div>
 
-        {/* 4) Cadence & Sprint (nudges) */}
+        {/* Nudges & sprint */}
         <div className="mt-10 mb-6 p-4 rounded-lg border bg-white shadow-sm">
           <h2 className="font-semibold mb-3">Optional nudges & sprint</h2>
 
-          {/* cadence */}
           <div className="grid gap-4 mb-5">
             <div className="flex flex-wrap gap-4 items-center">
               <span className="font-semibold">Cadence:</span>
-              <label className="flex items-center gap-2"><input type="radio" name="cad"
-                     checked={cadence==='daily'} onChange={()=>setCadence('daily')} /> Daily</label>
-              <label className="flex items-center gap-2"><input type="radio" name="cad"
-                     checked={cadence==='3x'} onChange={()=>setCadence('3x')} /> 3× per week (Mon/Wed/Fri)</label>
-              <label className="flex items-center gap-2"><input type="radio" name="cad"
-                     checked={cadence==='weekly'} onChange={()=>setCadence('weekly')} /> Weekly (Mon)</label>
-              <label className="flex items-center gap-2"><input type="radio" name="cad"
-                     checked={cadence==='self'} onChange={()=>setCadence('self')} /> Only when I choose</label>
+              <label className="flex items-center gap-2"><input type="radio" name="cad" checked={cadence==='daily'}  onChange={()=>setCadence('daily')} /> Daily</label>
+              <label className="flex items-center gap-2"><input type="radio" name="cad" checked={cadence==='3x'}     onChange={()=>setCadence('3x')} /> 3× per week (Mon/Wed/Fri)</label>
+              <label className="flex items-center gap-2"><input type="radio" name="cad" checked={cadence==='weekly'} onChange={()=>setCadence('weekly')} /> Weekly (Mon)</label>
+              <label className="flex items-center gap-2"><input type="radio" name="cad" checked={cadence==='self'}   onChange={()=>setCadence('self')} /> Only when I choose</label>
             </div>
             <div className="flex flex-wrap gap-4 items-center">
               <label className="flex items-center gap-2">Start date
-                <input type="date" className="ml-2 border rounded px-2 py-1"
-                       value={cadenceStart} onChange={e=>setCadenceStart(e.target.value)} />
+                <input type="date" className="ml-2 border rounded px-2 py-1" value={cadenceStart} onChange={e=>setCadenceStart(e.target.value)} />
               </label>
-              <button onClick={downloadCadenceICS} className="px-3 py-1 rounded-md border text-sm"
-                      disabled={cadence==='self'}>
+              <button onClick={downloadCadenceICS} className="px-3 py-1 rounded-md border text-sm" disabled={cadence==='self'}>
                 Download {cadence==='daily' ? 'daily' : cadence==='3x' ? 'Mon/Wed/Fri' : cadence==='weekly' ? 'weekly' : ''} calendar (.ics)
               </button>
               <span className="text-xs text-gray-600">Import .ics into Outlook or Google Calendar.</span>
             </div>
           </div>
 
-          {/* sprint */}
           <div>
             <h3 className="font-semibold mb-2">14-day sprint (one prompt per day)</h3>
             {!sprintActive ? (
               <div className="flex flex-wrap items-center gap-3">
                 <label className="flex items-center gap-2">Start on
-                  <input type="date" className="ml-2 border rounded px-2 py-1"
-                         value={sprintStart} onChange={e=>setSprintStart(e.target.value)} />
+                  <input type="date" className="ml-2 border rounded px-2 py-1" value={sprintStart} onChange={e=>setSprintStart(e.target.value)} />
                 </label>
-                <button onClick={()=>{ setSprintActive(true); setSprintStart(date); try { localStorage.setItem('ac_sprint', JSON.stringify({active:true, startDate:date, days:SP
-RINT_DAYS})); } catch {} }}
-                        className="px-3 py-1 rounded-md border">Start sprint</button>
+                <button
+                  onClick={() => { setSprintActive(true); try { localStorage.setItem('ac_sprint', JSON.stringify({active:true, startDate:sprintStart, days:SPRINT_DAYS})); } catch {} }}
+                  className="px-3 py-1 rounded-md border"
+                >
+                  Start sprint
+                </button>
                 <button onClick={downloadSprintICS} className="px-3 py-1 rounded-md border">Download sprint calendar (.ics)</button>
-                <span className="text-xs text-gray-600">Import .ics into Outlook or Google Calendar.</span>
               </div>
             ) : (
               <div className="flex flex-wrap items-center gap-3">
                 <span className="inline-block rounded-md bg-white border px-3 py-1 shadow-sm">
-                  Sprint active • Day {sprintDay} of {SP
-RINT_DAYS} (started {sprintStart})
+                  Sprint active • Day {Math.min(SPRINT_DAYS, Math.max(1, daysBetween(sprintStart, date)+1))} of {SPRINT_DAYS} (started {sprintStart})
                 </span>
-                <button onClick={()=>{ setSprintActive(false); try { localStorage.setItem('ac_sprint', JSON.stringify({active:false})); } catch {} }}
-                        className="px-3 py-1 rounded-md border">
+                <button
+                  onClick={() => { setSprintActive(false); try { localStorage.setItem('ac_sprint', JSON.stringify({active:false})); } catch {} }}
+                  className="px-3 py-1 rounded-md border"
+                >
                   End sprint
                 </button>
               </div>
