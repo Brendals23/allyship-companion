@@ -3,52 +3,41 @@ import React from 'react';
 import { Page, Text, View, Document, StyleSheet } from '@react-pdf/renderer';
 
 const styles = StyleSheet.create({
-  page: { padding: 40 },
-  title: { fontSize: 22, marginBottom: 8, fontWeight: 700 },
-  meta: { fontSize: 12, marginBottom: 16, color: '#444' },
-  section: { marginBottom: 10 },
-  entryDate: { fontSize: 12, marginBottom: 4, color: '#0B2E4F' },
-  label: { fontSize: 11, color: '#555' },
-  value: { fontSize: 12, marginTop: 2, lineHeight: 1.4 },
-  divider: { marginVertical: 8, borderBottomWidth: 1, borderBottomColor: '#e5e5e5' },
-  footer: {
-    position: 'absolute',
-    bottom: 20,
-    left: 40,
-    right: 40,
-    fontSize: 10,
-    textAlign: 'center',
-    color: '#666'
-  }
+  page:   { padding: 40 },
+  title:  { fontSize: 20, fontWeight: 700, color: '#0B2E4F', marginBottom: 6 },
+  meta:   { fontSize: 10, color: '#555', marginBottom: 16 },
+  card:   { borderColor: '#e5e5e5', borderWidth: 1, borderRadius: 6, padding: 10, marginBottom: 10 },
+  label:  { fontSize: 9, color: '#666', marginBottom: 4 },
+  prompt: { fontSize: 12, fontStyle: 'italic', marginBottom: 6 },
+  body:   { fontSize: 11, lineHeight: 1.35 },
+  empty:  { fontSize: 12, color: '#666', fontStyle: 'italic' },
+  footer: { position: 'absolute', left: 40, right: 40, bottom: 28, fontSize: 9, color: '#666', textAlign: 'center' },
 });
 
-export function SprintWrapPDF({ start, end, entries = [], theme }) {
+export function SprintWrapPDF({ start, end, entries = [], theme = 'All' }) {
+  const sorted = [...entries].sort((a,b) => (a.date < b.date ? -1 : 1));
+
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        <Text style={styles.title}>Allyship 14‑Day Sprint — Wrap‑Up</Text>
-        <Text style={styles.meta}>Dates: {start} to {end} • Theme: {theme}</Text>
+        <Text style={styles.title}>Reflection Summary — {theme === 'All' ? 'All Themes' : theme}</Text>
+        <Text style={styles.meta}>
+          Period: {start} to {end} • {sorted.length} entr{sorted.length === 1 ? 'y' : 'ies'}
+        </Text>
 
-        {entries.length === 0 ? (
-          <Text style={styles.value}>
-            No entries saved for this sprint window on this device.
-          </Text>
+        {sorted.length === 0 ? (
+          <Text style={styles.empty}>No entries found in this period on this device.</Text>
         ) : (
-          entries.map((e, i) => (
-            <View key={i} style={styles.section}>
-              <Text style={styles.entryDate}>Day {i + 1} • {e.date}</Text>
-              <Text style={styles.label}>Prompt</Text>
-              <Text style={styles.value}>{e.prompt}</Text>
-              <View style={styles.divider} />
-              <Text style={styles.label}>Reflection</Text>
-              <Text style={styles.value}>{e.reflection}</Text>
+          sorted.map((e, i) => (
+            <View key={i} style={styles.card}>
+              <Text style={styles.label}>{e.date}  •  Theme: {e.theme}</Text>
+              <Text style={styles.prompt}>{e.prompt}</Text>
+              <Text style={styles.body}>{e.reflection || '—'}</Text>
             </View>
           ))
         )}
 
-        <Text style={styles.footer}>
-          Generated with Allyship Companion – no data stored
-        </Text>
+        <Text style={styles.footer}>Generated with Allyship Companion — no data stored</Text>
       </Page>
     </Document>
   );
