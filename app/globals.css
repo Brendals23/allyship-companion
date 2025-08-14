@@ -1,76 +1,76 @@
-@import url('https://fonts.googleapis.com/css2?family=Lexend:wght@400;600;700&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ---------- Color tokens ---------- */
-/* Normal (pastel) */
+/* ---- Fonts ---- */
+@font-face {
+  font-family: "OpenDyslexic";
+  src: url("https://cdn.jsdelivr.net/gh/antijingoist/open-dyslexic/alternatives/OpenDyslexicAlta-Regular.otf") format("opentype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ---- Design tokens via CSS variables ---- */
+/* Allyship Companion default */
 :root {
-  --bg:       #EAF4FF;  /* page background */
-  --fg:       #0b0b0b;  /* primary text */
-  --muted:    #444;     /* secondary text */
-  --accent:   #0B2E4F;  /* headings / strong text */
+  --bg: #e9f2ff;            /* soft blue background */
+  --card: #ffffff;
+  --text: #0a0f1a;
+  --muted: #3d4b63;
+  --border: #d7e2f2;
+  --brand: #1e88e5;          /* link/brand accent */
+  --teal: #2CB5A0;           /* kept for accents (progress, focus) */
+  --coral: #FF6F61;
+  --focus: var(--teal);
 
-  --card:     #ffffff;  /* card background (maps .bg-white) */
-  --border:   #e5e7eb;  /* default border */
-  --tealSoft: #25b3a7;  /* prompt accent */
+  --text-scale: 1;
 }
 
-/* High contrast (toggled by <html data-contrast="high">) */
-[data-contrast='high'] {
-  --bg:       #000000;
-  --fg:       #ffffff;
-  --muted:    #e6e6e6;
-  --accent:   #ffffff;
-
-  --card:     #111111;
-  --border:   #666666;
-  --tealSoft: #4dd;     /* brighter accent */
+/* High-contrast mode (AA+ friendly) */
+.hc {
+  --bg: #000000;
+  --card: #000000;
+  --text: #ffffff;
+  --muted: #e6e6e6;
+  --border: #ffffff;
+  --brand: #ffffff;
+  --focus: #ffff00; /* yellow outline in HC */
 }
 
-/* ---------- Global layout ---------- */
-html, body { height: 100%; }
-
+/* ---- Base application styling ---- */
+html { font-size: calc(16px * var(--text-scale)); }
 body {
   background: var(--bg);
-  color: var(--fg);
-  font-feature-settings: "cv10","cv11";
-  transition: background-color .2s ease, color .2s ease;
+  color: var(--text);
 }
 
-.container { max-width: 860px; }
+/* Remove any default image banners at top — we’re going text-first */
+header img[alt*="logo"], header img[alt*="wordmark"] { display: none !important; }
 
-/* ---------- Tailwind bridges so utilities adapt to tokens ---------- */
-.bg-white { background-color: var(--card) !important; }
-.border   { border-color: var(--border) !important; }
-
-.text-gray-600, .text-gray-700 { color: var(--muted) !important; }
-.text-navyDeep { color: var(--accent) !important; }
-
-.text-tealSoft   { color: var(--tealSoft) !important; }
-.border-tealSoft { border-color: var(--tealSoft) !important; }
-
-/* Inputs & selects */
-input, select, textarea {
-  background: #fff;
-  color: var(--fg);
-  border-color: var(--border);
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
 }
-[data-contrast='high'] input,
-[data-contrast='high'] select,
-[data-contrast='high'] textarea {
-  background: #000;
-  color: #fff;
-  border-color: var(--border);
+
+::selection { background: var(--teal); color: white; }
+
+/* Reusable helpers that match Allyship Companion’s look */
+.surface { background: var(--card); }
+.card { @apply rounded-xl p-4; background: var(--card); border: 1px solid var(--border); }
+.text-muted { color: var(--muted); }
+.border-subtle { border-color: var(--border); }
+.btn {
+  @apply rounded-xl px-5 py-3 font-medium;
+  background: #0D1B2A; color: #fff;
 }
-input::placeholder, textarea::placeholder { color: #9aa3af; }
-[data-contrast='high'] input::placeholder,
-[data-contrast='high'] textarea::placeholder { color: #bfbfbf; }
+.btn[disabled] { @apply opacity-40; }
 
-button { border-color: var(--border); }
+/* Chapter chips / dots */
+.dot { width: 10px; height: 10px; border-radius: 9999px; background: var(--border); }
+.dot.active { background: var(--teal); }
 
-/* ---------- Prompt card background ---------- */
-/* normal: soft teal tint; high contrast: clear for max legibility */
-.prompt-box { background: rgba(37, 179, 167, 0.10); }
-[data-contrast='high'] .prompt-box { background: transparent !important; }
+/* Keep old Tailwind color refs working inside components */
+.text-navy\/80, .text-navy\/70, .text-navy\/60 { color: var(--muted) !important; }
+.border-navy\/10, .border-navy\/20 { border-color: var(--border) !important; }
+.bg-white { background: var(--card) !important; }
